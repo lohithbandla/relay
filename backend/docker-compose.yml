@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine        # alpine = smaller image, faster pull
+    container_name: relay_postgres
+    restart: unless-stopped          # auto-restart on crash, not on manual stop
+    environment:
+      POSTGRES_USER: chatuser
+      POSTGRES_PASSWORD: chatpassword
+      POSTGRES_DB: chatdb
+    ports:
+      - "5432:5432"                  # host:container
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # persist data across restarts
+    networks:
+      - relay_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatuser -d chatdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: relay_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data             # persist redis data
+    networks:
+      - relay_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:                     # named volume, managed by Docker
+  redis_data:
+
+networks:
+  relay_network:
+    driver: bridge                   # default, containers can talk to each other
