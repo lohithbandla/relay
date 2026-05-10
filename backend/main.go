@@ -4,10 +4,12 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/lohithbandla/relay/internal/channels"
 	"github.com/lohithbandla/relay/internal/config"
 	"github.com/lohithbandla/relay/internal/database"
 	"github.com/lohithbandla/relay/internal/middleware"
 	redisClient "github.com/lohithbandla/relay/internal/redis"
+	"github.com/lohithbandla/relay/internal/servers"
 	"github.com/lohithbandla/relay/internal/users"
 )
 
@@ -49,15 +51,22 @@ func main() {
 
 	// Wire up dependencies manually — this is called Pure DI (no DI framework)
 	// Order matters: repo → service → handler → routes
+	// existing user wiring
 	userRepo := users.NewRepository()
 	userService := users.NewService(userRepo)
 	userHandler := users.NewHandler(userService, cfg)
 
-	// All API routes live under /api/v1
+	// server + channel wiring
+	channelRepo := channels.NewRepository()
+	channelService := channels.NewService(channelRepo)
+	serverRepo := servers.NewRepository()
+	serverService := servers.NewService(serverRepo, channelRepo)
+	serverHandler := servers.NewHandler(serverService, channelService)
+
+	// routes
 	api := app.Group("/api/v1")
 	users.RegisterRoutes(api, userHandler)
 
-	// Protected route group — all routes here require a valid JWT
 	protected := api.Group("", middleware.Protected(cfg))
 	protected.Get("/me", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
@@ -66,6 +75,17 @@ func main() {
 			"username": c.Locals("username"),
 		})
 	})
+	servers.RegisterRoutes(protected, serverHandler)
+
+	// Run migrations — pass all models here as you add them
+	if err := database.Migrate(
+		&users.User{},
+		&servers.Server{},
+		&servers.ServerMember{},
+		&channels.Channel{},
+	); err != nil {
+		log.Fatalf("[main] Migration failed: %v", err)
+	}
 
 	log.Printf("[server] Starting on port %s in %s mode", cfg.AppPort, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.AppPort); err != nil {
