@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/lohithbandla/relay/internal/config"
 	"github.com/lohithbandla/relay/internal/database"
+	"github.com/lohithbandla/relay/internal/middleware"
 	redisClient "github.com/lohithbandla/relay/internal/redis"
 	"github.com/lohithbandla/relay/internal/users"
 )
@@ -43,6 +44,26 @@ func main() {
 			"success": true,
 			"message": "Server is healthy",
 			"env":     cfg.AppEnv,
+		})
+	})
+
+	// Wire up dependencies manually — this is called Pure DI (no DI framework)
+	// Order matters: repo → service → handler → routes
+	userRepo := users.NewRepository()
+	userService := users.NewService(userRepo)
+	userHandler := users.NewHandler(userService, cfg)
+
+	// All API routes live under /api/v1
+	api := app.Group("/api/v1")
+	users.RegisterRoutes(api, userHandler)
+
+	// Protected route group — all routes here require a valid JWT
+	protected := api.Group("", middleware.Protected(cfg))
+	protected.Get("/me", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"success":  true,
+			"userID":   c.Locals("userID"),
+			"username": c.Locals("username"),
 		})
 	})
 
