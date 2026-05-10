@@ -42,3 +42,9 @@ func Connect(cfg *config.Config) error {
 func GetClient() *redis.Client {
 	return client
 }
+
+// Close gracefully closes the Redis connection.
+func Close() error {
+	log.Println("[redis] Closing connection")
+	return client.Close()
+}

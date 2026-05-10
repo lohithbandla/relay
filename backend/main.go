@@ -1,7 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/lohithbandla/relay/internal/channels"
@@ -37,15 +42,25 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName: "Discord Backend v1.0",
+		AppName:     "Discord Backend v1.0",
+		IdleTimeout: 5 * time.Second,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			return c.Status(code).JSON(fiber.Map{
 				"success": false,
 				"error":   err.Error(),
 			})
 		},
 	})
 
+	// Global middleware
+	app.Use(middleware.Recover())
+	app.Use(middleware.RequestLogger())
+
+	// Health check
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"success": true,
@@ -54,38 +69,40 @@ func main() {
 		})
 	})
 
-	// User wiring
+	// Wiring
 	userRepo := users.NewRepository()
 	userService := users.NewService(userRepo)
 	userHandler := users.NewHandler(userService, cfg)
 
-	// Channel wiring
 	channelRepo := channels.NewRepository()
 	channelService := channels.NewService(channelRepo)
 
-	// Server wiring
 	serverRepo := servers.NewRepository()
 	serverService := servers.NewService(serverRepo, channelRepo)
 	serverHandler := servers.NewHandler(serverService, channelService)
 
-	// Message wiring
 	messageRepo := messages.NewRepository()
 	messageService := messages.NewService(messageRepo)
 	messageHandler := messages.NewHandler(messageService)
 
-	// Hub — created ONCE with messageService injected
 	hub := ws.NewHub(messageService)
 	go hub.Run()
 
-	// WebSocket wiring
 	wsHandler := ws.NewHandler(hub, cfg)
 
-	// Public routes
+	// Routes
 	api := app.Group("/api/v1")
-	users.RegisterRoutes(api, userHandler)
 
-	// Protected routes
-	protected := api.Group("", middleware.Protected(cfg))
+	// Auth — strict rate limit
+	auth := api.Group("/auth", middleware.StrictRateLimiter())
+	auth.Post("/register", userHandler.Register)
+	auth.Post("/login", userHandler.Login)
+
+	// Protected — JWT + rate limit
+	protected := api.Group("",
+		middleware.RateLimiter(),
+		middleware.Protected(cfg),
+	)
 	protected.Get("/me", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"success":  true,
@@ -93,14 +110,46 @@ func main() {
 			"username": c.Locals("username"),
 		})
 	})
+
 	servers.RegisterRoutes(protected, serverHandler)
 	messages.RegisterRoutes(protected, messageHandler)
-
-	// WebSocket routes
+	users.RegisterRoutes(protected, userHandler)
 	ws.RegisterRoutes(app, wsHandler)
 
-	log.Printf("[server] Starting on port %s in %s mode", cfg.AppPort, cfg.AppEnv)
-	if err := app.Listen(":" + cfg.AppPort); err != nil {
-		log.Fatalf("[server] Failed to start: %v", err)
+	// ── Graceful Shutdown ──────────────────────────────────
+	// Run server in goroutine so signal handling works
+	go func() {
+		log.Printf("[server] Starting on port %s in %s mode", cfg.AppPort, cfg.AppEnv)
+		if err := app.Listen(":" + cfg.AppPort); err != nil {
+			log.Fatalf("[server] Failed to start: %v", err)
+		}
+	}()
+
+	// Wait for OS signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+
+	log.Printf("[server] Received signal: %s — shutting down gracefully", sig)
+
+	// 10 second timeout for in-flight requests
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown Fiber
+	if err := app.ShutdownWithContext(ctx); err != nil {
+		log.Printf("[server] Forced shutdown: %v", err)
 	}
+
+	// Close DB
+	if err := database.Close(); err != nil {
+		log.Printf("[server] DB close error: %v", err)
+	}
+
+	// Close Redis
+	if err := redisClient.Close(); err != nil {
+		log.Printf("[server] Redis close error: %v", err)
+	}
+
+	log.Println("[server] Shutdown complete ✅")
 }

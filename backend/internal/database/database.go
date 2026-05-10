@@ -79,3 +79,13 @@ func Migrate(models ...interface{}) error {
 	log.Println("[database] Migration complete")
 	return nil
 }
+
+// Close gracefully closes the database connection pool.
+func Close() error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	log.Println("[database] Closing connection pool")
+	return sqlDB.Close()
+}

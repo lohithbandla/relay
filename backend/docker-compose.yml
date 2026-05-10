@@ -2,21 +2,21 @@ version: "3.9"
 
 services:
   postgres:
-    image: postgres:16-alpine        # alpine = smaller image, faster pull
+    image: postgres:16-alpine
     container_name: relay_postgres
-    restart: unless-stopped          # auto-restart on crash, not on manual stop
+    restart: unless-stopped
     environment:
       POSTGRES_USER: chatuser
       POSTGRES_PASSWORD: chatpassword
       POSTGRES_DB: chatdb
     ports:
-      - "5432:5432"                  # host:container
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data   # persist data across restarts
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - relay_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chatuser -d chatdb"]
+      test: [ "CMD-SHELL", "pg_isready -U chatuser -d chatdb" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,19 +28,49 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data             # persist redis data
+      - redis_data:/data
     networks:
       - relay_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: relay_app
+    restart: unless-stopped
+    ports:
+      - "7777:7777"
+    environment:
+      APP_PORT: 7777
+      APP_ENV: production
+      DB_HOST: postgres # container name = hostname inside Docker network
+      DB_PORT: 5432
+      DB_USER: chatuser
+      DB_PASSWORD: chatpassword
+      DB_NAME: chatdb
+      DB_SSLMODE: disable
+      REDIS_HOST: redis # container name = hostname inside Docker network
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      JWT_SECRET: your-super-secret-key-change-in-production
+      JWT_EXPIRY_HOURS: 72
+    depends_on:
+      postgres:
+        condition: service_healthy # wait for postgres to be ready
+      redis:
+        condition: service_healthy # wait for redis to be ready
+    networks:
+      - relay_network
+
 volumes:
-  postgres_data:                     # named volume, managed by Docker
+  postgres_data:
   redis_data:
 
 networks:
   relay_network:
-    driver: bridge                   # default, containers can talk to each other
+    driver: bridge

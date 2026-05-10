@@ -1,0 +1,44 @@
+# ── Stage 1: Builder ──────────────────────────────────────────
+# Use official Go image to compile our binary
+FROM golang:1.25-alpine AS builder
+
+# Install git (needed for some go modules)
+RUN apk add --no-cache git
+
+# Set working directory inside container
+WORKDIR /app
+
+# Copy go.mod and go.sum first — Docker caches this layer
+# If these don't change, Docker skips re-downloading dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the binary
+# CGO_ENABLED=0 → pure Go, no C dependencies (needed for Alpine)
+# GOOS=linux    → target Linux (even if building on Windows/Mac)
+# -ldflags="-w -s" → strip debug info → smaller binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o relay ./main.go
+
+# ── Stage 2: Runner ───────────────────────────────────────────
+# Tiny Alpine image — no Go toolchain, just our binary
+FROM alpine:3.19
+
+# Install CA certificates — needed for HTTPS calls
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+# Copy ONLY the compiled binary from builder stage
+COPY --from=builder /app/relay .
+
+# Copy .env.example as reference (real env vars injected at runtime)
+# COPY --from=builder /app/.env.example .env.example
+
+# Expose the port our app listens on
+EXPOSE 7777
+
+# Run the binary
+CMD ["./relay"]
