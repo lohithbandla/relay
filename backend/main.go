@@ -7,6 +7,7 @@ import (
 	"github.com/lohithbandla/relay/internal/channels"
 	"github.com/lohithbandla/relay/internal/config"
 	"github.com/lohithbandla/relay/internal/database"
+	"github.com/lohithbandla/relay/internal/messages"
 	"github.com/lohithbandla/relay/internal/middleware"
 	redisClient "github.com/lohithbandla/relay/internal/redis"
 	"github.com/lohithbandla/relay/internal/servers"
@@ -16,18 +17,22 @@ import (
 func main() {
 	cfg := config.Load()
 
-	// Initialize PostgreSQL
 	if err := database.Connect(cfg); err != nil {
 		log.Fatalf("[main] Database connection failed: %v", err)
 	}
 
-	// Initialize Redis
 	if err := redisClient.Connect(cfg); err != nil {
 		log.Fatalf("[main] Redis connection failed: %v", err)
 	}
 
-	// Run migrations — pass all models here as you add them
-	if err := database.Migrate(&users.User{}); err != nil {
+	// Single migrate call with ALL models
+	if err := database.Migrate(
+		&users.User{},
+		&servers.Server{},
+		&servers.ServerMember{},
+		&channels.Channel{},
+		&messages.Message{},
+	); err != nil {
 		log.Fatalf("[main] Migration failed: %v", err)
 	}
 
@@ -49,25 +54,32 @@ func main() {
 		})
 	})
 
-	// Wire up dependencies manually — this is called Pure DI (no DI framework)
-	// Order matters: repo → service → handler → routes
-	// existing user wiring
+	// User wiring
 	userRepo := users.NewRepository()
 	userService := users.NewService(userRepo)
 	userHandler := users.NewHandler(userService, cfg)
 
-	// server + channel wiring
+	// Channel wiring
 	channelRepo := channels.NewRepository()
 	channelService := channels.NewService(channelRepo)
+
+	// Server wiring
 	serverRepo := servers.NewRepository()
 	serverService := servers.NewService(serverRepo, channelRepo)
 	serverHandler := servers.NewHandler(serverService, channelService)
 
-	// routes
+	// Message wiring
+	messageRepo := messages.NewRepository()
+	messageService := messages.NewService(messageRepo)
+	messageHandler := messages.NewHandler(messageService)
+
+	// Public routes
 	api := app.Group("/api/v1")
 	users.RegisterRoutes(api, userHandler)
 
+	// Protected routes — JWT required for everything below
 	protected := api.Group("", middleware.Protected(cfg))
+
 	protected.Get("/me", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"success":  true,
@@ -75,17 +87,9 @@ func main() {
 			"username": c.Locals("username"),
 		})
 	})
-	servers.RegisterRoutes(protected, serverHandler)
 
-	// Run migrations — pass all models here as you add them
-	if err := database.Migrate(
-		&users.User{},
-		&servers.Server{},
-		&servers.ServerMember{},
-		&channels.Channel{},
-	); err != nil {
-		log.Fatalf("[main] Migration failed: %v", err)
-	}
+	servers.RegisterRoutes(protected, serverHandler)
+	messages.RegisterRoutes(protected, messageHandler)
 
 	log.Printf("[server] Starting on port %s in %s mode", cfg.AppPort, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.AppPort); err != nil {
