@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/lohithbandla/relay/internal/channels"
 	"github.com/lohithbandla/relay/internal/config"
 	"github.com/lohithbandla/relay/internal/database"
@@ -55,6 +56,12 @@ func main() {
 			})
 		},
 	})
+
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET, POST, PUT, DELETE, OPTIONS",
+	}))
 
 	// Global middleware
 	app.Use(middleware.Recover())
