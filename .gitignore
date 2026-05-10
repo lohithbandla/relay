@@ -1,0 +1,22 @@
+# Environment variables - NEVER commit these
+.env
+*.env
+.env.local
+.env.production
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+tmp/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
