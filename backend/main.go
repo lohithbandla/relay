@@ -7,6 +7,7 @@ import (
 	"github.com/lohithbandla/relay/internal/config"
 	"github.com/lohithbandla/relay/internal/database"
 	redisClient "github.com/lohithbandla/relay/internal/redis"
+	"github.com/lohithbandla/relay/internal/users"
 )
 
 func main() {
@@ -20,6 +21,11 @@ func main() {
 	// Initialize Redis
 	if err := redisClient.Connect(cfg); err != nil {
 		log.Fatalf("[main] Redis connection failed: %v", err)
+	}
+
+	// Run migrations — pass all models here as you add them
+	if err := database.Migrate(&users.User{}); err != nil {
+		log.Fatalf("[main] Migration failed: %v", err)
 	}
 
 	app := fiber.New(fiber.Config{

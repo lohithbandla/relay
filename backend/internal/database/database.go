@@ -68,3 +68,14 @@ func Connect(cfg *config.Config) error {
 func GetDB() *gorm.DB {
 	return db
 }
+
+// Migrate runs auto-migration for all models.
+// Call this after Connect() at startup.
+// AutoMigrate creates tables, adds missing columns — never deletes columns.
+func Migrate(models ...interface{}) error {
+	if err := db.AutoMigrate(models...); err != nil {
+		return fmt.Errorf("migration failed: %w", err)
+	}
+	log.Println("[database] Migration complete")
+	return nil
+}
