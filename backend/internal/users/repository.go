@@ -2,6 +2,7 @@ package users
 
 import (
 	"github.com/lohithbandla/relay/internal/database"
+	"github.com/lohithbandla/relay/internal/servers"
 	"gorm.io/gorm"
 )
 
@@ -57,4 +58,11 @@ func (r *Repository) ExistsByUsername(username string) bool {
 	var count int64
 	r.db.Model(&User{}).Where("username = ?", username).Count(&count)
 	return count > 0
+}
+
+// GetServerMembers returns all members of a server.
+func (r *Repository) GetServerMembers(serverID string) ([]servers.ServerMember, error) {
+	var members []servers.ServerMember
+	err := r.db.Where("server_id = ?", serverID).Find(&members).Error
+	return members, err
 }

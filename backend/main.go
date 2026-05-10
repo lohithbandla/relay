@@ -12,6 +12,7 @@ import (
 	redisClient "github.com/lohithbandla/relay/internal/redis"
 	"github.com/lohithbandla/relay/internal/servers"
 	"github.com/lohithbandla/relay/internal/users"
+	ws "github.com/lohithbandla/relay/internal/websocket"
 )
 
 func main() {
@@ -25,7 +26,6 @@ func main() {
 		log.Fatalf("[main] Redis connection failed: %v", err)
 	}
 
-	// Single migrate call with ALL models
 	if err := database.Migrate(
 		&users.User{},
 		&servers.Server{},
@@ -73,13 +73,19 @@ func main() {
 	messageService := messages.NewService(messageRepo)
 	messageHandler := messages.NewHandler(messageService)
 
+	// Hub — created ONCE with messageService injected
+	hub := ws.NewHub(messageService)
+	go hub.Run()
+
+	// WebSocket wiring
+	wsHandler := ws.NewHandler(hub, cfg)
+
 	// Public routes
 	api := app.Group("/api/v1")
 	users.RegisterRoutes(api, userHandler)
 
-	// Protected routes — JWT required for everything below
+	// Protected routes
 	protected := api.Group("", middleware.Protected(cfg))
-
 	protected.Get("/me", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{
 			"success":  true,
@@ -87,9 +93,11 @@ func main() {
 			"username": c.Locals("username"),
 		})
 	})
-
 	servers.RegisterRoutes(protected, serverHandler)
 	messages.RegisterRoutes(protected, messageHandler)
+
+	// WebSocket routes
+	ws.RegisterRoutes(app, wsHandler)
 
 	log.Printf("[server] Starting on port %s in %s mode", cfg.AppPort, cfg.AppEnv)
 	if err := app.Listen(":" + cfg.AppPort); err != nil {

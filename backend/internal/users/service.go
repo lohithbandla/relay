@@ -3,6 +3,7 @@ package users
 import (
 	"errors"
 
+	"github.com/lohithbandla/relay/internal/servers"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -64,4 +65,10 @@ func (s *Service) FindByEmail(email string) (*User, error) {
 // FindByID exposes the repository method to the handler layer.
 func (s *Service) FindByID(id string) (*User, error) {
 	return s.repo.FindByID(id)
+}
+
+// GetServerMembers returns all members of a server.
+// Used for presence checking.
+func (s *Service) GetServerMembers(serverID string) ([]servers.ServerMember, error) {
+	return s.repo.GetServerMembers(serverID)
 }
