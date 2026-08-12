@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getMessages } from '../lib/api'
 import { useChannelSocket } from '../hooks/useChannelSocket'
+import { useCall } from '../hooks/useCall'
+import CallPanel from './CallPanel'
 
 function formatTime(iso) {
   try {
@@ -23,8 +25,15 @@ export default function ChatView({ channel, onStatusChange }) {
   const listRef = useRef(null)
   const typingStateRef = useRef(false)
   const typingStopTimerRef = useRef(null)
+  // Call signaling events are handled by useCall, which is constructed
+  // after `send` exists below — a ref sidesteps that ordering.
+  const callSignalRef = useRef(null)
 
   const onEvent = useCallback((type, payload) => {
+    if (type.startsWith('call_')) {
+      callSignalRef.current?.(type, payload)
+      return
+    }
     switch (type) {
       case 'new_message':
         setMessages((prev) => (prev.some((m) => m.id === payload.id) ? prev : [...prev, payload]))
@@ -51,6 +60,11 @@ export default function ChatView({ channel, onStatusChange }) {
   }, [])
 
   const { status, send } = useChannelSocket(channel?.id, onEvent)
+  const call = useCall(channel?.id, send, status)
+
+  useEffect(() => {
+    callSignalRef.current = call.handleSignalEvent
+  }, [call.handleSignalEvent])
 
   useEffect(() => {
     onStatusChange?.(status)
@@ -140,7 +154,31 @@ export default function ChatView({ channel, onStatusChange }) {
         <span className="chat-header__hash">{channel.type === 'voice' ? '🔊' : '#'}</span>
         <span className="chat-header__name">{channel.name}</span>
         {channel.topic && <span className="chat-header__topic">{channel.topic}</span>}
+        <button
+          className={`call-header-btn ${call.inCall ? 'call-header-btn--active' : ''}`}
+          onClick={call.inCall ? call.leaveCall : call.joinCall}
+          disabled={status !== 'open'}
+        >
+          {call.inCall ? '⏹ Leave call' : '📹 Start call'}
+        </button>
       </div>
+
+      {call.mediaError && (
+        <div className="call-error">// couldn't access camera/mic: {call.mediaError}</div>
+      )}
+
+      {call.inCall && (
+        <CallPanel
+          username={user?.username}
+          localStream={call.localStream}
+          participants={call.participants}
+          muted={call.muted}
+          cameraOff={call.cameraOff}
+          onToggleMute={call.toggleMute}
+          onToggleCamera={call.toggleCamera}
+          onLeave={call.leaveCall}
+        />
+      )}
 
       <div className="message-list" ref={listRef}>
         {loading && <div className="center-loading">// loading history</div>}
