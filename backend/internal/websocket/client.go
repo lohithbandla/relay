@@ -14,7 +14,7 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 4096
+	maxMessageSize = 65536
 
 	// HeartbeatInterval is how often client refreshes presence
 	heartbeatInterval = 30 * time.Second
