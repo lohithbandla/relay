@@ -161,19 +161,14 @@ func (h *Hub) handleSendMessage(msg *BroadcastMessage, event InboundEvent) {
 	}
 
 	// Publish to Redis — all server instances will receive this
-	// and deliver to their local clients
-	data, err := json.Marshal(outbound)
-	if err != nil {
-		return
-	}
-
+	// and deliver to their local clients.
+	// Publish() marshals whatever we pass it, and SubscribeToChannel
+	// unmarshals straight into OutboundEvent — so pass outbound directly,
+	// don't pre-wrap it in PubSubMessage (that double-encodes the envelope).
 	if err := redispkg.Publish(
 		context.Background(),
 		redispkg.ChannelKey(msg.ChannelID.String()),
-		redispkg.PubSubMessage{
-			Type:    string(EventTypeNewMessage),
-			Payload: data,
-		},
+		outbound,
 	); err != nil {
 		log.Printf("[hub] Failed to publish to Redis: %v", err)
 		h.broadcastEvent(msg.ChannelID, outbound, nil)

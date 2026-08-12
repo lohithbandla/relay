@@ -1,6 +1,8 @@
 package messages
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/lohithbandla/relay/internal/database"
 	"gorm.io/gorm"
@@ -38,9 +40,9 @@ func (r *Repository) GetChannelMessages(query GetMessagesQuery) ([]MessageRespon
 		Type      MessageType `gorm:"column:type"`
 		ChannelID uuid.UUID   `gorm:"column:channel_id"`
 		SenderID  uuid.UUID   `gorm:"column:sender_id"`
-		CreatedAt interface{} `gorm:"column:created_at"`
-		UpdatedAt interface{} `gorm:"column:updated_at"`
-		EditedAt  interface{} `gorm:"column:edited_at"`
+		CreatedAt time.Time   `gorm:"column:created_at"`
+		UpdatedAt time.Time   `gorm:"column:updated_at"`
+		EditedAt  *time.Time  `gorm:"column:edited_at"`
 
 		// Sender fields (from JOIN)
 		SenderUsername  string  `gorm:"column:sender_username"`
@@ -76,6 +78,9 @@ func (r *Repository) GetChannelMessages(query GetMessagesQuery) ([]MessageRespon
 				Type:      r.Type,
 				ChannelID: r.ChannelID,
 				SenderID:  r.SenderID,
+				CreatedAt: r.CreatedAt,
+				UpdatedAt: r.UpdatedAt,
+				EditedAt:  r.EditedAt,
 			},
 			Sender: MessageSender{
 				ID:        r.SenderID,
